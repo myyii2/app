@@ -5,6 +5,7 @@ use Yii;
 use yii\web\Controller;
 use app\models\User;
 use api\models\Task;
+use api\models\Course;
 use common\library\Redis;
 
 
@@ -46,7 +47,6 @@ class SiteController extends Controller
 
         $condition['taskId'] = $task_id;
         $myFeilds = array('taskName','pass_rate','endTime','taskId','add_uname');
-
         $returnData = Task::find()->select($myFeilds)->where($condition)->all();
 
         //echo Task::find()->select($myFeilds)->where($condition)->createCommand()->getRawSql();exit;
@@ -56,14 +56,12 @@ class SiteController extends Controller
         $retval['data']['passRate'] = !empty($returnData['data'][0]['pass_rate'])?$returnData['data'][0]['pass_rate']:'';
         $retval['data']['endTime'] = !empty($returnData['data'][0]['endTime'])?$returnData['data'][0]['endTime']:'';
         $retval['data']['enterpriseName'] = !empty($returnData['data'][0]['add_uname'])?$returnData['data'][0]['add_uname']:'';
-
-
-        $res = array('fe'=>'3232','ef'=>'54');
-
+        
+        $field = array('courseId','deptId','name','server_id','hits','introduction','check_word','hasPaper','source','from_uid','addTime','viewers','sales','status','ext_permission','audit','int_permission','person_price','group_price','cate_id','cate_type','class_id');
+        $res = Course::getRowById($courseId,$field);
+        print_r($res);exit;
         $myres = serialize($request);
-
         Yii::$app->redis->set('a',$myres);
-        //$course = Redis::getCourse($courseId);
         $res = Yii::$app->redis->get('a');
 
         $res = unserialize($res);
