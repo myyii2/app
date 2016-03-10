@@ -57,8 +57,17 @@ class SiteController extends Controller
         $retval['data']['endTime'] = !empty($returnData['data'][0]['endTime'])?$returnData['data'][0]['endTime']:'';
         $retval['data']['enterpriseName'] = !empty($returnData['data'][0]['add_uname'])?$returnData['data'][0]['add_uname']:'';
 
-        $course = Redis::getCourse($courseId);
-        print_r($course);exit;
+
+        $res = array('fe'=>'3232','ef'=>'54');
+
+        $myres = serialize($request);
+
+        Yii::$app->redis->set('a',$myres);
+        //$course = Redis::getCourse($courseId);
+        $res = Yii::$app->redis->get('a');
+
+        $res = unserialize($res);
+        print_r($res->get('id'));exit;
 
         //判断courseId是否存在
         $res = $course->courseId;
