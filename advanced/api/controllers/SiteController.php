@@ -6,7 +6,13 @@ use yii\web\Controller;
 use app\models\User;
 use api\models\Task;
 use api\models\Course;
+use api\models\CommonFav;
+use api\models\SrcExt;
+use api\models\TaskUserLink;
+use api\models\TaskJoin;
 use common\library\Redis;
+use common\library\Common;
+
 
 
 class SiteController extends Controller
@@ -24,18 +30,8 @@ class SiteController extends Controller
     public function actionIndex()
     {
 
-        //$user = User::find()->where(['uid' => 18])->one();
-        //$userList = User::find()->indexBy('uid')->all();
-        ini_set("display_errors", "On");
-        error_reporting(E_ALL | E_STRICT);
-
-
-        $customer = User::findOne(500153);
-        $customer->username = 'tttter';
-        $userList = $customer->save();
-
-
-        var_dump($userList);exit;
+        $posts = Course::getRowById();
+        var_dump($posts);exit;
     }
 
     public function actionDetail(){
@@ -49,111 +45,85 @@ class SiteController extends Controller
         $myFeilds = array('taskName','pass_rate','endTime','taskId','add_uname');
         $returnData = Task::find()->select($myFeilds)->where($condition)->all();
 
-        //echo Task::find()->select($myFeilds)->where($condition)->createCommand()->getRawSql();exit;
-
         $retval['data']['taskId'] =!empty($returnData['data'][0]['taskId'])?$returnData['data'][0]['taskId']:'';
         $retval['data']['taskName'] =!empty($returnData['data'][0]['taskName'])?$returnData['data'][0]['taskName']:'';
         $retval['data']['passRate'] = !empty($returnData['data'][0]['pass_rate'])?$returnData['data'][0]['pass_rate']:'';
         $retval['data']['endTime'] = !empty($returnData['data'][0]['endTime'])?$returnData['data'][0]['endTime']:'';
         $retval['data']['enterpriseName'] = !empty($returnData['data'][0]['add_uname'])?$returnData['data'][0]['add_uname']:'';
-        
-        $field = array('courseId','deptId','name','server_id','hits','introduction','check_word','hasPaper','source','from_uid','addTime','viewers','sales','status','ext_permission','audit','int_permission','person_price','group_price','cate_id','cate_type','class_id');
-        $res = Course::getRowById($courseId,$field);
-        print_r($res);exit;
-        $myres = serialize($request);
-        Yii::$app->redis->set('a',$myres);
-        $res = Yii::$app->redis->get('a');
 
-        $res = unserialize($res);
-        print_r($res->get('id'));exit;
+        $course = Yii::$app->redis->get('course_'.$courseId);
+        $course = unserialize($course);
+        if(empty($course['courseId'])){
+            $course = Course::getRowById($courseId);
+            $myres = serialize($course);
+            Yii::$app->redis->set('course_'.$courseId,$myres);
+        }
 
         //判断courseId是否存在
-        $res = $course->courseId;
+        $res = $course['courseId'];
         if ($res === null) {
             outputJson('课程不存在');
         }
 
-
-        // $user = new User();
-        // $user->getRowById($userId);
-        // $userInfo = $user->getRawDataFromBack();
-        // common::$current_user['uid'] = $userId;
-        // common::$current_user['userType'] = $userInfo['data']['userType'];
-
-        $courseObj = new Course();
-        $courseObj->getRowById($courseId);
-        $courseInfo = $courseObj->getRawDataFromBack();
-
-        $picList = json_decode($courseInfo['data']['picList'],1);
-        foreach($picList as $key=>$val){
-            $retval['data']['picList'][] = Rule::get_photo_url($val, "unifyUpload");
-        }
-
-        if(empty($picList)){
-            $retval['data']['picList'][] = prefixImage($course->getImageUrl(1));
-            $retval['data']['interval_time'] = 0;
-        }else{
+        $picList = json_decode($course['picList'],1);
+        if(!empty($picList)){
+            foreach($picList as $key=>$val){
+                $retval['data']['picList'][] = Rule::get_photo_url($val, "unifyUpload");
+            }
             $retval['data']['interval_time'] = 2000;
+        }else{
+            $retval['data']['picList'][] = '';
+            $retval['data']['interval_time'] = 0;
         }
 
-        $course->hasItem = $course->hasPaper;
-        if ($course->status && !SessionRegister::getCourseHits($courseId)) { //筛选已经被审核且当前用户未记录点击数
-            $courseObj->addHits($courseId);
-            SessionRegister::setCourseHits($courseId);
+        $course['hasItem'] = $course['hasPaper'];
+        if ($course['status']) { //筛选已经被审核且当前用户未记录点击数
+            Course::addHits($courseId);
         }
 
 
 
         //购买的，查原作者
         $fromUserName = '';
-        if (!empty($course->source)) {
-            $courseObj->getRowById($courseId);
-            $courseInfo = $courseObj->getRawDataFromBack();
-            if (!empty($courseInfo['data']['srcCourseId'])) {
-                $sourceCourse = ApplicationRegistry::getCourse($courseInfo['data']['srcCourseId']);
-                $fromUid = $sourceCourse->from_uid;
+        if (!empty($course['source'])) {
+            if (!empty($course['srcCourseId'])) {
+                $oneCourse=Course::findOne($course['srcCourseId']);
+                $fromUid = $oneCourse->from_uid;
             } else {
                 //查不到来源的
-                $course->source = 0;
+                $course['source'] = 0;
             }
         }
 
         //游客，加上来源
-        // if (empty($userId))
-        $fromUid = $course->from_uid;
-
+        $fromUid = $course['from_uid'];
         if (!empty($fromUid)) {
-            $user = new User();
-            $user->getRowById($fromUid, array('realname', 'email'));
-            $data = $user->getRawDataFromBack();
-            $fromUserName = !empty($data['data']['realname']) ? $data['data']['realname'] : $data['data']['email'];
+            $site=User::find(18)->select(['realname', 'email'])->asArray()->one();
+            $fromUserName = !empty($site['realname']) ? $site['realname'] : $site['email'];
         }
 
         //判断是否收藏
         $con['uid'] = $userId;
         $con['data_id'] = $courseId;
         $con['data_type'] = 'course';
-        $commonFav = new module\User\controller\CommonFav();
-        $commonFav->getListCount($con);
-        $dataCount = $commonFav->getRawDataFromBack();
-        if($dataCount['data'] > 0){
+        $comFavCount = CommonFav::find()->where($con)->count();
+
+        if($comFavCount > 0){
             $retval['data']['is_collect']   = 1;
         }else{
             $retval['data']['is_collect']   = 0;
         }
 
-        $retval['data']['comment_total'] = intval($course->commentTotal);
+        $retval['data']['comment_total'] = intval($course['commentTotal']);
         $retval['data']['author'] = $fromUserName;
-        $retval['data']['click']  = intval($course->viewers);
-
-        $cateList = Toolkit::getCate($course->cate_id);
-        $retval['data']['category'] = empty($cateList['name']) ? '未分类' : $cateList['name'];
+        $retval['data']['click']  = intval($course['viewers']);
+        $retval['data']['category'] = !empty($course['cateName']) ? $course['cateName']:'未分类';
 
         //查询资源额外权限
-        $src_ext = new module\Course\controller\SrcExt();
-        $src_ext->getList(0, 0, array('type'=>SRC_TYPE_COURSE,'srcId'=>$courseId),array(),array());
-        $src_ext_data = $src_ext->getRawDataFromBack();
-        $src_ret = (int)$src_ext_data['data'][0]['ret'];        //额外限制权限，默认为0--无额外权限
+        $conz['type'] = 2; //常量定义
+        $conz['srcId'] = $courseId;
+        $src_ext_data = SrcExt::find()->where($conz)->asArray()->one();
+        $src_ret = (int)$src_ext_data['ret'];//额外限制权限，默认为0--无额外权限
 
         //默认，不需要申请购买
         $retval['data']['buy'] = 0;
@@ -165,43 +135,26 @@ class SiteController extends Controller
         $retval['data']['vipTips'] = "";    //会员制套餐导购提示信息
 
         if (!empty($task_id)) {     //判断任务权限,任务情况
-            $TulObj = new \module\Course\controller\TaskUserLink();
-            $TulObj->getList(1,1,array("user_id" => $userId,"task_id" => $task_id),
-                array("task->course_id","task->status"));
-            $retData = $TulObj->getRawDataFromBack();
+            $cons['user_id'] = $userId;
+            $cons['task_id'] = $task_id;
+            $retData = TaskUserLink::getTulList($cons);
+            $retData = $retData[0];
 
+            //empty($tulData) && outputJson("无相关任务信息");  修复
 
-            $retData['code'] != common::CODE_SUCCEED && outputJson($retData['msg']);
-            $retData = $retData['data'];
-            $tulData = reset($retData);
-
-            empty($tulData) && outputJson("无相关任务信息");
-
-            if ($tulData['course_id'] != $courseId) {
+            if ($retData['course_id'] != $courseId) {
                 outputJson("课程信息与任务信息不匹配");
             }
 
             //考核状态判断
-            if ($tulData['status'] != common::TASK_GOING) {
+            if ($retData['status'] != 1) {
                 outputJson("任务已过期");
             }
 
             //获取考核章节索引
-            $taskJoin = new TaskJoinForMycs();
-            $taskJoin->getTaskNextChapter($task_id,$userId);
-            $retData = $taskJoin->getRawDataFromBack();
-            $nextIndex = $retData['data']['optional'];
-            $curChapterStatus = $retData['data']['curChapterStatus'];
-//        $taskJoin->getUserNextChapter($task_id, $userId);
-//        $ret = $taskJoin->getRawDataFromBack();
-//        $lastChapterId = $ret['data']['chapter_id'];
-//
-//        $nextIndex = $course->getNextChapterIndex($lastChapterId);
-
-
-            //更新task_user_link状态 及响应时间
-            //$TulObj->updateList(array("status"=>1), array('task_id'=>$task_id,"user_id" => $userId,"status"=>0));
-            //$TulObj->setResponse($userId,$task_id);
+            $retData = TaskJoin::getTaskNextChapter($task_id,$userId);
+            $nextIndex = $retData['optional'];
+            $curChapterStatus = $retData['curChapterStatus'];
 
         } else {
             $retval['data']['extra_permission'] = $src_ret;

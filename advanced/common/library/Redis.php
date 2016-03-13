@@ -1,7 +1,5 @@
 <?php
 namespace common\library;
-use Yii;
-
 
 class Redis{
 

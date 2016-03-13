@@ -1,6 +1,7 @@
 <?php
 
 namespace api\models;
+use common\library\Common;
 
 use Yii;
 
@@ -120,21 +121,70 @@ class Course extends \yii\db\ActiveRecord
         ];
     }
     
-    public static function getRowById($courseId,$field)
+    public static function getRowById($courseId)
     {
-        $res = self::find(
-                    array(
-                        'select'=>array('courseId'),
-                        'condition' => 'courseId=:courseid',
-                        'params' => array(':courseid'=>$courseId),
-                      ));
-        $sql = self::find(
-                    array(
-                        'select'=>array('courseId'),
-                        'condition' => 'courseId=:courseid',
-                        'params' => array(':courseid'=>$courseId),
-                      ))->createCommand()->getRawSql();
-        echo $sql;exit;
+
+        $connection = \Yii::$app->db1;
+        $command = $connection->createCommand('SELECT courseId,deptId,course.name,server_id,hits,introduction,picList,srcCourseId,commentTotal,check_word,hasPaper,source,from_uid,addTime,viewers,sales,status,ext_permission,audit,int_permission,person_price,group_price,cate_id,cate_type,class_id,cateName,course_custom_sort.name as custom_name,parent_id FROM course left join course_category on course.cate_id=course_category.cateId left join course_selfmake on course.courseId=course_selfmake.course_id left join course_custom_sort on course_selfmake.sort_id=course_custom_sort.sortId where course.courseId ='.$courseId);
+        $posts = $command->queryOne();
+        if(empty($posts)){ return 0; }
+
+        $posts['parentCate']['cateId'] = 0;
+        $posts['parentCate']['cateName'] = '';
+        if(!empty($posts['parent_id'])){
+            $command = $connection->createCommand('SELECT * from course_category where cateId = '.$posts['parent_id']);
+            $cateList = $command->queryOne();
+            $posts['parentCate']['cateId'] = $cateList['cateId'];
+            $posts['parentCate']['cateName'] = $cateList['cateName'];
+        }
+
+        $command = $connection->createCommand('SELECT chapter.chapterId,chapter.listOrder,chapter.try,chapter.name,chapter.video_id from course,course_chapter_link as ccl,chapter where course.courseId = ccl.course_id and ccl.chapter_id = chapter.chapterId and course.courseId ='.$courseId);
+        $chapterList = $command->queryAll();
+
+
+        $chapterArr = array_map(function($element){return $element['chapterId'];},$chapterList);
+        $videoArr = array_map(function($element){return $element['video_id'];},$chapterList);
+        $newarr = implode(",", $videoArr);
+        $newsarr = implode(",", $chapterArr);
+
+        $posts['selfmakeSortName']['name'] = $posts['custom_name'];
+
+        unset($posts['parent_id']);
+        unset($posts['custom_name']);
+        if(!empty($posts['chapters'])) {
+            Common::array_sort($posts['chapters'], 'listOrder', 'asc');
+        }
+
+        $sql = 'SELECT vul.ext_permission,vul.id,vul.video_id,vul.title as title,v.size,v.format,v.duration,v.upload_uid,vul.type,v.audit,v.server_id from video_user_link as vul left join video as v on v.videoId=vul.video_id where vul.id in ('.$newarr.')';
+        $command = $connection->createCommand($sql);
+        $videoList = $command->queryAll();
+        $videoList = array_reduce($videoList, create_function('$v,$w', '$v[$w["id"]]=$w;return $v;'));
+
+
+        $sqls = 'SELECT tp.paperId,tp.chapter_id,tp.title,tp.timeSpot,tp.count,tp.finishTime,tpi.itemId,tpi.title as papertitle,tpi.paper_id,tpi.type,tpi.option,tpi.result,tpi.listOrder from testpaper as tp left join testpaper_item as tpi on tp.paperId=tpi.paper_id where tp.chapter_id in ('.$newsarr.')';
+
+        $command = $connection->createCommand($sqls);
+        $paperList = $command->queryAll();
+        $paperList = array_reduce($paperList, create_function('$v,$w', '$v[$w["chapter_id"]]=$w;return $v;'));
+
+        foreach($chapterList as $key=>$val){
+            $video_id = $val['video_id'];
+            $chapterId = $val['chapterId'];
+            $chapterList[$key]['video'] = $paperList[$chapterId];
+            $chapterList[$key]['papers'] = $videoList[$video_id];
+        }
+        $posts['chapters'] = $chapterList;
+        return $posts;
+
+    }
+
+    public static function addHits($courseId)
+    {
+        $condition['courseId'] = $courseId;
+        $site=self::findOne($courseId);
+        $site->hits +=1;
+        $res = $site->save();
         return $res;
     }
+
 }
