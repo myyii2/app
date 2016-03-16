@@ -4,12 +4,16 @@ namespace api\controllers;
 use Yii;
 use yii\web\Controller;
 use app\models\User;
+use api\models\UserStaff;
+use api\models\Vip;
 use api\models\Task;
 use api\models\Course;
 use api\models\CommonFav;
 use api\models\SrcExt;
 use api\models\TaskUserLink;
 use api\models\TaskJoin;
+use api\models\PayingGoods;
+use api\models\PayingApply;
 use common\library\Redis;
 use common\library\Common;
 
@@ -17,6 +21,11 @@ use common\library\Common;
 
 class SiteController extends Controller
 {
+
+    public $enterpriseId = 0;
+    public $staffAdminInfo = array();
+
+
 
     public function actions()
     {
@@ -36,7 +45,30 @@ class SiteController extends Controller
 
     public function actionDetail(){
 
-        $request = Yii::$app->request;
+        $request = Yii::$app->getRequest();
+        $page  =$request->get('page') ? $request->get('page') : 1;
+        $pageSize = $request->get('pageSize') ? $request->get('pageSize') : common::PAGE_SIZE;
+        $userId   = (int)$request->get('userId');
+        $userType = $request->get('userType');
+        $action   = $request->get('action');
+        $staffAdmin   = $request->get("staffAdmin");
+        $agroup_id   = $request->get("agroup_id");
+        $id = $request->get('Id');
+
+        //员工，找企业ID
+        if ($userType == common::USER_STAFF) {
+            $cone['uid'] = $userId;
+            $staffData=UserStaff::find()->where($cone)->select(['enterprise_id', 'dept_id'])->asArray()->one();
+
+            if (!empty($staffData)){
+                $enterpriseId = $staffData['enterprise_id'];
+                $staffAdminInfo = $staffData;
+            }else{
+                outputJson('查询不到所属企业信息');
+            }
+        }
+
+
         $userId = $request->get('userId');
         $courseId = $request->get('id');
         $task_id = $request->get('task_id');
@@ -157,54 +189,55 @@ class SiteController extends Controller
             $curChapterStatus = $retData['curChapterStatus'];
 
         } else {
+
+            $src_ret = 1;
             $retval['data']['extra_permission'] = $src_ret;
+            define("SRC_RET_MEMBER",1);
             if (SRC_RET_MEMBER == $src_ret) {
                 //查询是否已经购买会员
-                $mret = Rule::getVipCate($course->cate_id,$course->class_id) ;
+                $mret = Common::getVipCate($course['cate_id'],$course['class_id']);
+
                 $retval['data']['memberType'] = $mret;
                 if($mret){
                     $checkUid = !empty($enterpriseId) ? $enterpriseId : $userId;
-                    $vip = new module\User\controller\Vip;
-                    $vip->getCountByUid( $checkUid,$mret,$course->cate_id);
-                    $tempData = $vip->getRawDataFromBack();
+                    $tempData = Vip::getCountByUid($checkUid,$mret,$course['cate_id']);
 
-                    if($tempData['data'][0]['count'] > 0){
+                    if($tempData['count'] > 0){
                         //如果已经购买了会员
                         $retval['data']['isMember'] = 1;
                     } else {
-                        $retval['data']['vipTips'] = Rule::getVipTips($mret,$course->cate_id);
+                        $retval['data']['vipTips'] = Common::getVipTips($mret,$course['cate_id']);
                     }
                 }
             }
 
-
             //    判断对内权限
-            if ($course->from_uid == $enterpriseId && $course->int_permission == 0) {
+            if ($course['from_uid'] == $enterpriseId && $course['int_permission'] == 0) {
                 outputJson('此教程对内不公开');
             }
 
+            $course['ext_permission']=3;
+            $userType=5;
             //要购买的教程
-            if ($course->from_uid != $userId && $course->ext_permission == 3) {
+            if ($course['from_uid'] != $userId && $course['ext_permission'] == 3) {
                 // 判断员工所在公司有没有已经购买
-                if (!empty($enterpriseId) && $course->from_uid != $enterpriseId) {
+                if (!empty($enterpriseId) && $course['from_uid'] != $enterpriseId) {
 
-                    $payingGoods = new module\Course\controller\PayingGoods;
                     //要申请购买
                     $retval['data']['buy'] = 1;
                     //是否已申请购买
-                    $buyWhere = array('goodsType' => 0, 'goodsId' => $courseId, 'replyUid' => $enterpriseId);
-                    $payingGoods->getList(0, 0, $buyWhere, array(), array('id' => 'desc'));
-                    $list = $payingGoods->getRawDataFromBack();
-                    if (!empty($list['data'])) {
-                        if ($list['data'][0]['status'] == 1) {
-                            $retval['data']['buy'] = 3;           //已买
+                    $buyWhere = array('goodsType' => 0, 'goodsId' => 1256, 'replyUid' => $enterpriseId);
+                    $list = PayingGoods::find()->where($buyWhere)->orderBy('id desc')->asArray()->all();
 
-                        } elseif ($list['data'][0]['status'] == 0) {
-                            //未处理
-                            $payingApply = new module\Course\controller\PayingApply;
-                            $payingApply->getListCount(array('payingGoodsId' => $list['data'][0]['id'], 'uid' => $userId));
-                            $total = $payingApply->getRawDataFromBack();
-                            if (!empty($total['data'])) {
+                    if (!empty($list)) { $list[0]['status'] = 0;
+                        if ($list[0]['status'] == 1) {
+                            $retval['buy'] = 3;           //已买
+
+                        } elseif ($list[0]['status'] == 0) {
+
+                            $cond = array('payingGoodsId' => $list[0]['id'], 'uid' => $userId);
+                            $total = PayingApply::find()->where($cond)->count();
+                            if (!empty($total)) {
                                 $retval['data']['buy'] = 2;
                             }
                         }
@@ -213,20 +246,17 @@ class SiteController extends Controller
                 } elseif ($userType != common::USER_STAFF) {
 
                     $where = array('from_uid' => $userId, 'srcCourseId' => $courseId);
-                    $courseObj->getListCount($where);
-                    $courseTotal = $courseObj->getRawDataFromBack();
-
+                    $courseTotal = Course::find()->where($where)->createCommand()->getRawSql();
                     //没买，需要购买
-                    if (empty($courseTotal['data'])){
+                    if (empty($courseTotal)){
                         $retval['data']['buy'] = 1;
                     } else {
                         $retval['data']['extra_permission'] = 0;
                     }
-
                 }
             }
         }
-
+exit;
         $retval['data']['id']           = $courseId;
         $retval['data']['name']         = $course->name;
         $retval['data']['image']        = prefixImage($course->getImageUrl(1));
