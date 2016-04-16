@@ -50,4 +50,37 @@ class Department extends \yii\db\ActiveRecord
             'isTag' => Yii::t('api', '是否为岗位标签专用'),
         ];
     }
+    
+     public static function getDepInfo($pid=0,$resultArrs=array(),$enterprise_uid){
+          
+          $key = 'deptTrees_'.md5($pid.$enterprise_uid);
+          $dataInfo = Yii::$app->redis->get($key);
+          if (empty($dataInfo)) {
+                $dataInfo = static::getDepTrees($pid,$resultArrs,$enterprise_uid);
+                $resList = serialize($dataInfo);
+                Yii::$app->redis->set($key,$resList);
+          }else{
+                $dataInfo = unserialize($dataInfo);
+          }
+          
+          $deptArr = array_map(function($element){return $element['deptId'];},$dataInfo);
+          array_push($deptArr,$pid);
+          return $deptArr;
+          
+     }
+    
+        public static function getDepTrees($pid,$resultArrs,$enterprise_uid){
+           
+             $conz['parent_id'] = $pid;
+             $conz['enterprise_uid'] =$enterprise_uid;
+             $conz['isTag'] = 0;
+             $resultArr = self::find()->where($conz)->asArray()->all();
+       
+             foreach($resultArr as $key=>$val){
+                    $resultArr = self::getDepTrees($val['deptId'],$resultArr,$enterprise_uid);
+             }
+             $resultArr = array_merge($resultArr,$resultArrs);
+             return $resultArr;
+            
+        }
 }

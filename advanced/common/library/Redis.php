@@ -53,7 +53,10 @@ class Redis{
                 $dataInfo['deptId'] = $retData['dept_id'];
                 $dataInfo['isAdmin'] = $retData['isAdmin'];
             }
-            Yii::$app->redis->set($checkKey,$dataInfo);
+            $resList = serialize($dataInfo);
+            Yii::$app->redis->set($checkKey,$resList);
+        }else{
+            $dataInfo = unserialize($dataInfo);
         }
         return array("uid" => $userId,"enterprise_id" => $dataInfo['enterpriseUid'],"dept_id" => $dataInfo['deptId'],"isAdmin" => $dataInfo['isAdmin']);
     }

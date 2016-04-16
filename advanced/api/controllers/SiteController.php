@@ -357,29 +357,25 @@ class SiteController extends Controller
             // sort: common: 普通   sop : sop
             $request = Yii::$app->getRequest();
             $type  =$request->get('type') ? $request->get('type') : 1;
-            $sort = $request->get('sort') ? $request->get('sort') : common::PAGE_SIZE;
+            $sort = $request->get('sort') ? $request->get('sort') : '';
             $userId   = (int)$request->get('userId');
             $userType = $request->get('userType');
             $staffAdmin = $request->get('staffAdmin');
             $type = isset($type) ? $type : 0;
             $page  =$request->get('page') ? $request->get('page') : 1;
-            $pageSize = $request->get('pageSize') ? $request->get('pageSize') : common::PAGE_SIZE;
-
+            $pageSize = $request->get('pageSize') ? $request->get('pageSize') : Yii::$app->params['PAGE_SIZE'];
+         
             //公共搜索条件
-            $condition = array('add_uid' => $userId, 'type'  => $type , 'status !=' => array( -1 ,4));
+            
+            $condition = array('add_uid' => $userId, 'type'  => $type , 'status' => array('not in', 'status', array(-1,4)));
+            
             if($staffAdmin){
-
                 $cone['uid'] = $userId;
                 $retData=UserStaff::find()->where($cone)->asArray()->one();
                 $staffAdminInfo = Redis::checkStaffInfo($userId,0,$retData);
+                $resultArr = Department::getDepInfo($staffAdminInfo['dept_id'],array(),$staffAdminInfo['enterprise_id']);
+                $condition['from_deptId'] = $resultArr;
                 $condition['add_uid'] = $staffAdminInfo['enterprise_id'];
-
-                $conz['enterprise_uid'] = $userId; //常量定义
-                $conz['isTag'] = 0;
-                $resultArr = Department::find()->where($conz)->orderBy('listOrder asc')->asArray()->all();
-                $deptArr = Redis::getDepartmentChild($staffAdminInfo,$resultArr);
-                $condition['from_deptId'] = $deptArr;
-
             }
 
             if (empty($userType))Common::outputJson('用户类型为空');
@@ -414,14 +410,14 @@ class SiteController extends Controller
                         }
                     }
                 } else {
+                    $andWhere = $condition['status'];
+                    unset($condition['status']);
                     //sop
-                    $retData=TaskSopLink::find()->where($condition)->count();
-                    $retval['data']['total'] = $retData;
-
+                    $retData=TaskSopLink::find()->where($condition)->andWhere($andWhere)->count();
+                    
                     if ($retData > 0) {
-                        $taskSopList = Task::find()->where($condition)->orderBy('id desc')->offset($page)->limit($pageSize)->asArray()->all();
-
-                        foreach ($taskSopList['data'] as $v) {
+                        $taskSopList = TaskSopLink::find()->where($condition)->andWhere($andWhere)->orderBy('id desc')->offset($page)->limit($pageSize)->asArray()->all();
+                        foreach ($taskSopList as $v) {
                             $ret = array();
                             $ret['name']      = $v['title'];
                             $ret['id']        = $v['id'];
@@ -430,11 +426,12 @@ class SiteController extends Controller
                             $ret['sopId']     = $v['sopId'];
                             $ret['status']     = $v['status'];
 
-                            $imageSrc = Rule::get_photo_url($v['sopId'], 'sopcover', 1);
+                            $imageSrc = Common::get_photo_url($v['sopId'], 'sopcover', 1);
                             $ret['picUrl'] = !empty($imageSrc) ? $imageSrc : "";
                             $retval['data']['list'][] = $ret;
                         }
                     }
+                    print_r($retval);exit;
                 }
             } else {
 
@@ -484,6 +481,7 @@ class SiteController extends Controller
                     $whereStr = " and tml.member_uid={$userId} and tml.isSop=1 and tml.status != -1 and tml.status != 4 " ;
                     $orderBy = " order by id desc ";
                     $taskList = $taskMemberLink::getSopListByWhere( $page, $pageSize,$whereStr ,$orderBy );
+                    
                     $retval['data']['total'] = intval($taskList['total']);
                     if ($retval['data']['total'] > 0) {
                        if (!empty($taskList['data'])) {
@@ -519,6 +517,7 @@ class SiteController extends Controller
             }
 
         }
+        
 
 
 
