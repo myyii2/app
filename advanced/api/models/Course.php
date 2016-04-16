@@ -158,24 +158,56 @@ class Course extends \yii\db\ActiveRecord
         $sql = 'SELECT vul.ext_permission,vul.id,vul.video_id,vul.title as title,v.size,v.format,v.duration,v.upload_uid,vul.type,v.audit,v.server_id from video_user_link as vul left join video as v on v.videoId=vul.video_id where vul.id in ('.$newarr.')';
         $command = $connection->createCommand($sql);
         $videoList = $command->queryAll();
+        $durationList = array_map(function($element){return $element['duration'];},$videoList);
+        $durationCount = date('H:i:s',array_sum($durationList));
         $videoList = array_reduce($videoList, create_function('$v,$w', '$v[$w["id"]]=$w;return $v;'));
 
-
-        $sqls = 'SELECT tp.paperId,tp.chapter_id,tp.title,tp.timeSpot,tp.count,tp.finishTime,tpi.itemId,tpi.title as papertitle,tpi.paper_id,tpi.type,tpi.option,tpi.result,tpi.listOrder from testpaper as tp left join testpaper_item as tpi on tp.paperId=tpi.paper_id where tp.chapter_id in ('.$newsarr.')';
-
+        $sqls = 'SELECT tp.paperId,tp.chapter_id,tp.title,tp.timeSpot,tp.count,tp.finishTime,tp.paperId from testpaper as tp where tp.chapter_id in ('.$newsarr.')';
         $command = $connection->createCommand($sqls);
         $paperList = $command->queryAll();
-        $paperList = array_reduce($paperList, create_function('$v,$w', '$v[$w["chapter_id"]]=$w;return $v;'));
+        $paperIdArr = array_map(function($element){return $element['paperId'];},$paperList);
+        $paperIdArr = implode(",", $paperIdArr);
+        $paperList = array_reduce($paperList, create_function('$v,$w', '$v[$w["chapter_id"]][]=$w;return $v;'));
+
+        $sqlz = 'SELECT tpi.itemId,tpi.title as papertitle,tpi.paper_id,tpi.type,tpi.option,tpi.result,tpi.listOrder from testpaper_item as tpi where tpi.paper_id in ('.$paperIdArr.')';
+        $command = $connection->createCommand($sqlz);
+        $paperDetail = $command->queryAll();
+
+        foreach($paperDetail as $key=>$val){
+            //$paperDetail[$key]['option'];
+            $res = unserialize($val['option']);
+            if($val['type'] == 'RadioButton'){
+                $paperDetail[$key]['type'] = '单选';
+            }else{
+                $paperDetail[$key]['type'] = '多选';
+            }
+
+            foreach($res as $k=>$v){
+                $vals = (array)$v;
+                $rez[$k]['index'] = $vals['index'];
+                $rez[$k]['content'] = $vals['content'];
+                $rez[$k]['isAnswer'] = $vals['isAnswer'];
+
+            }
+            $paperDetail[$key]['option'] = $rez;
+        }
+        $paperDeArr = array_reduce($paperDetail, create_function('$v,$w', '$v[$w["paper_id"]][]=$w;return $v;'));
+
+        foreach($paperList as $key=>$val){
+            foreach($val as $k=>$v) {
+                $paperList[$key][$k]['item'] = $paperDeArr[$v['paperId']];
+            }
+        }
 
         foreach($chapterList as $key=>$val){
             $video_id = $val['video_id'];
             $chapterId = $val['chapterId'];
-            $chapterList[$key]['video'] = $paperList[$chapterId];
-            $chapterList[$key]['papers'] = $videoList[$video_id];
+            $chapterList[$key]['papers'] = $paperList[$chapterId];
+            $chapterList[$key]['video'] = $videoList[$video_id];
         }
+        $posts['duration'] = $durationCount;
         $posts['chapters'] = $chapterList;
         return $posts;
-
     }
 
     public static function addHits($courseId)

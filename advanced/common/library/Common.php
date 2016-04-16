@@ -1,23 +1,9 @@
 <?php
 namespace common\library;
+use Yii;
 
 class Common{
 
-    const PAGE_SIZE=10;
-    const USER_PERSON = 1;//个人用户
-    const USER_ENTERPRISE_UNAUDITED = 2; //未通过企业营业执照审核的企业用户
-    const USER_STAFF = 3;//企业员工
-    const USER_AGENCY = 4;//机构用户
-    const USER_ENTERPRISE = 5; //通过企业营业执照审核的企业用户
-    const USER_MANAGER = 6; //企业授权辅助管理员
-    const USER_YIQUN = 7; //医群视频管理员账号
-    const USER_DOCTOR = 193; //医务工作者
-    const COMMOMDIR = __FILE__;
-    const USER_VIDEO = 8; //科室审核
-
-    const USER_HOSPITAL = 183; //医院账号
-    const USER_KESHI = 185; //科室账号
-    const USER_SHIYANSHI = 187; //实验室账号
     //vip 价格
     static $vip_package = array(
         'a'=>array('id'=>70,'price'=>1000.00,'name'=>'A套餐 生物无忧专科会员'),
@@ -28,17 +14,14 @@ class Common{
     static function array_sort(array $arr, $keys, $type = 'asc'){
 
         $keysvalue = $new_array = array();
-
         foreach ($arr as $k => $v) {
             $keysvalue[$k] = $v[$keys];
         }
-
         if ($type == 'asc') {
             array_multisort($keysvalue, SORT_ASC, $arr);
         } else {
             array_multisort($keysvalue, SORT_DESC, $arr);
         }
-
         return $arr;
     }
 
@@ -145,5 +128,208 @@ class Common{
 
     }
 
+    //给默认图片加上域名前缀
+    static function prefixImage($image) {
+        global $baseDomain;
+
+        if (strpos($image, 'http') === false) {
+            $image = $baseDomain.$image;
+        }
+        return $image;
+    }
+
+    /**
+     * app使用专属的默认图片
+     * @param int $fromType 区分是从移动端请求数据,移动端不使用默认图片,0--web端，1--app端
+     * @return string
+     */
+    static function getImageUrl($fromType = 0,$courseId,$server_id=1){
+        $retData = "";
+        if ($server_id) {
+            $retData = self::get_photo_url($courseId,'course',$server_id);
+        } else {
+            empty($fromType) && $retData = Yii::$app->params['DEFAULT_VIDEO_IMG'];
+        }
+        return $retData;
+    }
+
+    /**
+     * 返回图片http地址
+     * @param $pid
+     * @param string $type
+     * @param int $sid
+     * @param bool $preFS   是否优先使用文件服务器路径
+     * @return bool|string
+     */
+    static function get_photo_url($pid,$type='logo',$sid=1,$preFS = false){
+        if (empty($sid)) {  //服务器id为0或为null即表示图片尚未上传，返回默认图片
+            return Yii::$app->params['DEFAULT_VIDEO_IMG'];
+        }
+
+        $pType = Yii::$app->params['TYPE_PHOTO_JPG'];
+        if($type == "EnterpriseLogo" || $type == "qrcode"){      //企业logo图片或企业二维码，png可透明背景
+            $pType = Yii::$app->params['TYPE_PHOTO_PNG'];
+        }elseif($type == "EnterpriseIco"){
+            $pType = Yii::$app->params['TYPE_PHOTO_ICO'];
+        }
+
+        //存在redis记录走cdn路线
+        if (!$preFS) {
+            $name = $type."_".self::make_name($pid,$pType);
+            $cache = \common\library\Redis::getQiNiuInfo($name,Yii::$app->params['RES_PIC']);
+        } else {
+            $cache = false;
+        }
+        $retUrl = !empty($cache) ? $cache : "http://p".$sid.Yii::$app->params['BASE_URL']."/".self::make_store_path($pid,$type).self::make_name($pid,$pType);
+        return $retUrl;
+    }
+
+    /**
+     *
+     * @param int $id
+     * @param const $type TYPE_VIDEO,TYPE_PHOTO,TYPE_ATTACHMENT 3种产品类型
+     * @return string 返回文件名
+     */
+    static function make_name($id,$type=null){
+
+        if ( $type ==  Yii::$app->params['TYPE_VIDEO'])
+            $ext = "mp4";
+        else if( $type == Yii::$app->params['TYPE_PHOTO_PNG'])
+            $ext = "png";
+        else if($type == Yii::$app->params['TYPE_PHOTO_JPG'])
+            $ext = "jpg";
+        else if($type == Yii::$app->params['TYPE_PHOTO_ICO'])
+            $ext = "ico";
+        if($type!=null)
+            return self::encode_play_querystr($id).".".$ext;
+        else
+            return self::encode_play_querystr($id);
+    }
+
+
+    static function encode_play_querystr($id, $type=1){
+        $items = func_get_args();
+        $retval = implode('|',$items);
+
+        //校验码
+        $hash = crc32($retval);
+        $hash = sprintf("%x", $hash);
+        $hash = fmod(hexdec($hash), 99);
+        $hash = sprintf("%d", $hash);
+        $items[] = $hash;
+        //序列化
+        $retval = implode('|',$items);
+        //加密
+        $retval = self::crypto($retval);
+        //编码
+        $retval = self::base64url_encode($retval);
+        //去冗余
+        $retval = str_replace("=", "", $retval);
+        return $retval;
+    }
+
+    private function make_store_path($id,$type){
+        $path1 = $id%255;
+        $path2 = $id;
+        $path = $type."/".$path1."/".$path2."/";
+        return $path;
+    }
+
+
+    static function crypto($str) {
+        $len=strlen($str);
+        $retval="";
+        for ($pos = 0;$pos<$len;$pos++){
+            $keyToUse = (($len+$pos)+1); // (+5 or *3 or ^2)
+            $keyToUse = (255+$keyToUse) % 255;
+            $byteToBeEncrypted = substr($str, $pos, 1);
+            $asciiNumByteToEncrypt = ord($byteToBeEncrypted);
+            $xoredByte = $asciiNumByteToEncrypt ^ $keyToUse;  //xor operation
+            $encryptedByte = chr($xoredByte);
+            $retval .= $encryptedByte;
+        }
+        return $retval;
+    }
+
+    static function base64url_encode($plainText){
+        $base64 = base64_encode($plainText);
+        $base64 = str_replace("=", "", $base64);
+        $base64url = strtr($base64, '+/', '-_');
+        return ($base64url);
+    }
+
+    //视频播放页地址
+    static function dealPlayerUrl($id, $type) {
+        $encodeQueryStr = self::encode_play_querystr($id, $type);
+        $videoUrl = 'http://'.Yii::$app->params['MAIN_TOP_DOMAIN'].'.mycs.cn/player/'.$encodeQueryStr.'.html';
+
+        $extData = array() ;
+        $extData['id'] = $id ;
+        switch ($type) {
+            case Yii::$app->params['TYPE_VIDEO']:
+                $extData['type'] = 2 ;
+                break;
+            case Yii::$app->params['TYPE_COURSE']:
+                $extData['type'] = 3 ;
+                break;
+            case Yii::$app->params['TYPE_SOP']:
+                $extData['type'] = 4 ;
+                break;
+            default:
+                $extData['type'] = 2 ;
+                break;
+        }
+        return $videoUrl . "?extData=" . base64_encode(json_encode( $extData ));
+    }
+
+    /*
+	 * 返回视频http地址
+	 */
+    static function get_video_url($uid,$vid,$sid,$resType){
+        $resType = !empty($resType)?$resType:Yii::$app->params['RES_VIDEO'];
+        $name = self::make_name($vid,Yii::$app->params['TYPE_VIDEO']);
+        $cache = \common\library\Redis::getQiNiuInfo($name,$resType);
+        $url = $cache?$cache:"http://v".$sid.Yii::$app->params['BASE_URL']."/".self::make_video_store_path($uid,$vid,Yii::$app->params['TYPE_VIDEO']).$name;
+        return $url;
+    }
+
+    private function make_video_store_path($uid,$id,$type){
+        $path1 = $uid%255;
+        $path2 = $uid;
+        $path3 = $id;
+        $path = $path1."/".$path2."/".$path3."/";
+        return $path;
+    }
+
+    //format time length to 00:00:00
+    //$timeLength 90s to 01:30
+    static function formatTime($timeLenght){
+        $hour="00";
+        $t = date('i:s',ceil($timeLenght));
+        if($timeLenght>=3600){
+            $hour= floor($timeLenght / 3600);
+            if(strlen($hour)<2) $hour='0'.$hour;
+        }
+        return $hour.":".$t;
+    }
+
+
+    // 输出json格式给app
+    static function outputJson($retval) {
+
+        //出错时，直接传出错提示即可
+        if (!is_array($retval)) {
+            $retval = array('code' => Yii::$app->params['CODE_ERROR'], 'data' => (object) array(), 'msg' => $retval);
+        }else{
+            $retval = array('code' => Yii::$app->params['CODE_SUCCEED']);
+        }
+
+        if (!isset($retval['msg'])) {
+            $retval['msg'] = "";
+        }
+
+        echo json_encode($retval);
+        exit;
+    }
 
 }
