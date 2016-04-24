@@ -14,5 +14,12 @@ return [
         'userCommonKey' => 'user_common_',  //用户常用信息缓存
         'deptTreeKey' => 'dept_tree_',      //组织架构树信息缓存
         'staffInfoKey' => 'staff_info_',    //员工信息缓存
+    ),
+    'Task' => array(
+        'TASK_STATUS_DOING' => 1,   //考核中任务状态码
+        'TASK_STATUS_DONE' => 2,   //已过期
+        'TASK_TYPE_TRAIN' => 1,   //内训
+        'TASK_TYPE_INTERVIEW' => 0,   //面试
+        'TASK_TYPE_MEMBER' => 3,   //会员
     )
 ];

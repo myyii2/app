@@ -362,11 +362,11 @@ class SiteController extends Controller
             $userType = $request->get('userType');
             $staffAdmin = $request->get('staffAdmin');
             $type = isset($type) ? $type : 0;
-            $page  =$request->get('page') ? $request->get('page') : 1;
+            $page  =$request->get('page') ? $request->get('page') : 0;
             $pageSize = $request->get('pageSize') ? $request->get('pageSize') : Yii::$app->params['PAGE_SIZE'];
-         
+
             //公共搜索条件
-            
+
             $condition = array('add_uid' => $userId, 'type'  => $type , 'status' => array('not in', 'status', array(-1,4)));
             
             if($staffAdmin){
@@ -380,19 +380,22 @@ class SiteController extends Controller
 
             if (empty($userType))Common::outputJson('用户类型为空');
 
-            $memberTask = false;
+            $memberTask = true;
             if ($userType == Yii::$app->params['USER_ENTERPRISE'] && $type == 3) {
                 $memberTask = true;
             }
 
             if ($memberTask == false) {
+
+                $andWhere = $condition['status'];
+                unset($condition['status']);
+                $page = $page - 1;
+
                 if ($sort == 'common') {
 
-                    $retval['data']['total'] = Task::find()->where($condition)->count();
-
-                    if ($retval['data']['total'] > 0) {
-                        $resultData = Task::find()->where($condition)->orderBy('taskId DESC')->offset($page)->limit($pageSize)->asArray()->all();
-
+                    $retData = Task::find()->where($condition)->andWhere($andWhere)->count();
+                    if ($retData > 0) {
+                        $resultData = Task::find()->where($condition)->andWhere($andWhere)->orderBy('taskId DESC')->offset($page)->limit($pageSize)->asArray()->all();
                         foreach ($resultData as $v) {
                             $ret = array();
                             $ret['name']      = $v['taskName'];
@@ -409,14 +412,14 @@ class SiteController extends Controller
                             $retval['data']['list'][] = $ret;
                         }
                     }
+
                 } else {
-                    $andWhere = $condition['status'];
-                    unset($condition['status']);
+
                     //sop
                     $retData=TaskSopLink::find()->where($condition)->andWhere($andWhere)->count();
-                    
                     if ($retData > 0) {
                         $taskSopList = TaskSopLink::find()->where($condition)->andWhere($andWhere)->orderBy('id desc')->offset($page)->limit($pageSize)->asArray()->all();
+
                         foreach ($taskSopList as $v) {
                             $ret = array();
                             $ret['name']      = $v['title'];
@@ -431,23 +434,24 @@ class SiteController extends Controller
                             $retval['data']['list'][] = $ret;
                         }
                     }
-                    print_r($retval);exit;
                 }
             } else {
-
-                $taskMemberLink = new TaskMemberLink();
-
                 $retval['data']['list'] = array();
                 if ($sort == 'common') {
-                    $whereStr = " and tml.member_uid={$userId} and tml.isSop=0 and tml.status != -1 and tml.status != 4 " ;
+                    $whereStr = " and tml.member_uid={$userId} and tml.isSop=0 and tml.status != -1 and tml.status != 4 ";
                     $orderBy = " order by t.taskId desc ";
-                    $taskList = $taskMemberLink::getListByWhere($page,$pageSize,$whereStr,$orderBy);
-                    $retval['data']['total'] = intval($taskList['total']);
-                    if (!empty($total['data'])) {
+                    $taskList = TaskMenberLink::getListByWhere($page,$pageSize,$whereStr,$orderBy);
 
-                        $taskInfo = $taskList['data'] ;
-                        if (!empty($taskInfo['data'])) {
-                            foreach ($taskInfo['data'] as $v) {
+                    $courses = array_map(function($element){return $element['course_id'];},$taskList['data']);
+                    $con['courseId'] = $courses;
+                    $courseInfo = Course::find()->select('courseId,name')->where($con)->asArray()->all();
+                    $courseInfos = array_reduce($courseInfo, create_function('$v,$w', '$v[$w["courseId"]]=$w;return $v;'));
+
+                    $retval['data']['total'] = intval($taskList['total']['count']);
+                    if ($retval['data']['total']>0) {
+
+                        if (!empty($taskList['data'])) {
+                            foreach ($taskList['data'] as $v) {
                                 $ret = array();
                                 $ret['name']         = $v['taskName'];
                                 $ret['id']           = (int)$v['task_id'];
@@ -455,8 +459,8 @@ class SiteController extends Controller
                                 $ret['startTime']    = (int)$v['issueTime'];
                                 $ret['endTime']      = (int)$v['endTime'];
 
-                                if (Yii::$app->params['TASK_STATUS_DOING'] == $v['status'] && empty($v['staffUid'])) { //已发布但尚未分发的会员任务
-                                    $ret['status'] = Yii::$app->params['TASK_STATUS_UNSTART'];
+                                if (Yii::$app->params['Task']['TASK_STATUS_DOING'] == $v['status'] && empty($v['staffUid'])) { //已发布但尚未分发的会员任务
+                                    $ret['status'] = Yii::$app->params['Task']['TASK_STATUS_UNSTART'];
                                 } else {
                                     $ret['status'] = $v['status'];
                                 }
@@ -467,22 +471,23 @@ class SiteController extends Controller
                                     $ret['remainCount'] = $v['staffMaxCount'] - count($staffUid);
                                 }
 
-                                $courseInfo = Toolkit::getCourseInfo($v['course_id'],array(),true);
-                                $ret['picUrl'] = $courseInfo['imageSrc'] ? $courseInfo['imageSrc'] : "";
-                                $ret['courseName'] = $courseInfo['name'];
+                                if (!empty($v['course_id'])) {
+                                    $ret['picUrl'] = common::get_photo_url($v['course_id'], 'course', 1);
+                                } else {
+                                    $ret['picUrl'] = "";
+                                }
 
+                                $ret['courseName'] = $courseInfos[$v['course_id']]['name'];
                                 $retval['data']['list'][] = $ret;
                             }
                         }
                     }
-
                 } else {
 
                     $whereStr = " and tml.member_uid={$userId} and tml.isSop=1 and tml.status != -1 and tml.status != 4 " ;
                     $orderBy = " order by id desc ";
-                    $taskList = $taskMemberLink::getSopListByWhere( $page, $pageSize,$whereStr ,$orderBy );
-                    
-                    $retval['data']['total'] = intval($taskList['total']);
+                    $taskList = TaskMenberLink::getSopListByWhere( $page, $pageSize,$whereStr,$orderBy );
+                    $retval['data']['total'] = intval($taskList['total']['count']);
                     if ($retval['data']['total'] > 0) {
                        if (!empty($taskList['data'])) {
                             foreach ($taskList['data'] as $v) {
@@ -494,7 +499,7 @@ class SiteController extends Controller
                                 $ret['startTime']    = (int)$v['issueTime'];
                                 $ret['sopId']        = (int)$v['sopId'];
 
-                                if (Yii::$app->params['TASK_STATUS_DOING'] == $v['status'] && empty($v['staffUid'])) { //已发布但尚未分发的会员任务
+                       if (Yii::$app->params['Task']['TASK_STATUS_DOING'] == $v['status'] && empty($v['staffUid'])) { //已发布但尚未分发的会员任务
                                     $ret['status'] = Yii::$app->params['TASK_STATUS_UNSTART'];
                                 } else {
                                     $ret['status'] = $v['status'];
@@ -506,7 +511,7 @@ class SiteController extends Controller
                                     $ret['remainCount'] = $v['staffMaxCount'] - count($staffUid);
                                 }
 
-                                $imageSrc = Rule::get_photo_url($v['sopId'], 'sopcover', 1);
+                                $imageSrc = Common::get_photo_url($v['sopId'], 'sopcover', 1);
                                 $ret['picUrl'] = !empty($imageSrc) ? $imageSrc : "";
 
                                 $retval['data']['list'][] = $ret;

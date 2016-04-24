@@ -101,4 +101,41 @@ class TaskMenberLink extends \yii\db\ActiveRecord
         }
         return ['total'=>$total , 'data'=>$listData];
     }
+
+    /*
+    * 获得会员sop考核
+    */
+    public function getSopListByWhere($page=1,$pageSize=10,$whereStr="",$order_by = '')
+    {
+        $sql = "SELECT count(1) as count FROM `task_menber_link` as tml LEFT JOIN `task_sop_link` as t on (t.taskId = tml.task_id and t.status != -1 ) where 1 {$whereStr}";
+
+        $connection = \Yii::$app->db1;
+        $command = $connection->createCommand($sql);
+        $total = $command->queryOne();
+
+        $sql1 = "SELECT tml.id , tml.staffUid , tml.staffMaxCount ,t.title,t.sopId,t.status,t.issueTime,t.endTime,tml.task_id FROM `task_menber_link` as tml LEFT JOIN `task_sop_link` as t on (t.id = tml.task_id and t.status != -1 ) where 1 {$whereStr} {$order_by} limit " .($page -1 ) * $pageSize ." , {$pageSize}";
+
+        $command = $connection->createCommand($sql1);
+        $data = $command->queryAll();
+
+        $listData = array() ;
+        foreach ($data as $key => $v) {
+            $_tmp = array();
+
+            $_tmp['id'] = $v['id'];
+            $_tmp['staffUid'] = $v['staffUid'];
+            $_tmp['staffMaxCount'] = $v['staffMaxCount'];
+            $_tmp['title'] = $v['title'];
+            $_tmp['status'] = $v['status'];
+            $_tmp['issueTime'] = $v['issueTime'];
+            $_tmp['endTime'] = $v['endTime'];
+            $_tmp['task_id'] = $v['task_id'];
+            $_tmp['sopId'] = $v['sopId'];
+
+            $listData[] = $_tmp ;
+        }
+        return ['total'=>$total , 'data'=>$listData];
+    }
+
+
 }
