@@ -218,5 +218,14 @@ class Course extends \yii\db\ActiveRecord
         $res = $site->save();
         return $res;
     }
+    
+    public static function getCourseByIds($ids){
+        
+        $connection = \Yii::$app->db1;
+        $sql = "select courseId,name,server_id from course where courseId in (".$ids.")";
+        $command = $connection->createCommand($sql);
+        $courseList = $command->queryAll();
+        return $courseList;    
+    }
 
 }

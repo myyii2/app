@@ -3,7 +3,7 @@ return [
     'adminEmail' => 'admin@example.com',
     'SRC_TYPE_COURSE' => 2,
         //缓存信息数组
-    'Redis' => array (
+    'Redis' => [
         'mainBannerKey' => 'main_banner_status_',   //主banner设置状态
         'homeMailKey' => 'home_mail_',  //首页邮件信息缓存
         'homeTaskManagerKey' => 'home_taskmanager_',     //首页任务管理信息缓存
@@ -14,5 +14,19 @@ return [
         'userCommonKey' => 'user_common_',  //用户常用信息缓存
         'deptTreeKey' => 'dept_tree_',      //组织架构树信息缓存
         'staffInfoKey' => 'staff_info_',    //员工信息缓存
-    )
+    ],
+    'system' => [
+        'PAGE_SIZE' => 10,
+    ],
+    'BASE_URL' => '.mycs.cn',
+    'TYPE_VIDEO' => 1,
+    'RES_VIDEO_MP4' => 3,
+    'RES_PIC' => 2,
+    'RES_VIDEO' => 1,
+    'CODE_SUCCEED' => 1,
+    'CODE_ERROR' => 2,
+    'CODE_LACK' => 3,
+    
+    
+    
 ];

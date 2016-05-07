@@ -292,6 +292,19 @@ class Common{
         $url = $cache?$cache:"http://v".$sid.Yii::$app->params['BASE_URL']."/".self::make_video_store_path($uid,$vid,Yii::$app->params['TYPE_VIDEO']).$name;
         return $url;
     }
+    
+    /**
+	 * 
+	 * @param unknown_type $uid
+	 * @param unknown_type $vid
+	 * @param unknown_type $sid
+	 * @param string $key 图片尺寸  big,middle,small 目前只有big
+	 * @return string|multitype:string
+	 */
+        static  function get_video_photo_url($uid,$vid,$sid=1){
+              $videoUrl = "http://v".$sid.Yii::$app->params['BASE_URL']."/".self::make_video_store_path($uid,$vid,Yii::$app->params['TYPE_VIDEO']).'big.jpg';
+              return $videoUrl;
+        }
 
     private function make_video_store_path($uid,$id,$type){
         $path1 = $uid%255;
@@ -313,21 +326,24 @@ class Common{
         return $hour.":".$t;
     }
 
-
     // 输出json格式给app
-    static function outputJson($retval) {
+    static function outputJson($retvals) {
 
+        $retval['code'] = 1;
         //出错时，直接传出错提示即可
-        if (!is_array($retval)) {
-            $retval = array('code' => Yii::$app->params['CODE_ERROR'], 'data' => (object) array(), 'msg' => $retval);
+        if (!is_array($retvals)) {
+            $retval = array('code' => Yii::$app->params['CODE_ERROR'], 'data' => (object) array(), 'msg' => $retvals);
         }else{
             $retval = array('code' => Yii::$app->params['CODE_SUCCEED']);
         }
 
+        if (!empty($retvals)) {
+            $retval['data'] = $retvals;
+        }
+        
         if (!isset($retval['msg'])) {
             $retval['msg'] = "";
         }
-
         echo json_encode($retval);
         exit;
     }

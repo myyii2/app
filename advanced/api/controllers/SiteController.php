@@ -10,6 +10,7 @@ use api\models\Task;
 use api\models\TaskSopLink;
 use api\models\TaskMenberLink;
 use api\models\Course;
+use api\models\SopTemplate;
 use api\models\CommonFav;
 use api\models\SrcExt;
 use api\models\TaskUserLink;
@@ -20,6 +21,7 @@ use api\models\PraiseLog;
 use api\models\Video;
 use api\models\StatisticsTaskUser;
 use api\models\Department;
+use api\models\StudyLogNew;
 use common\library\Redis;
 use common\library\Common;
 
@@ -30,7 +32,7 @@ class SiteController extends Controller
 
     public $enterpriseId = 0;
     public $staffAdminInfo = array();
-
+    public $sortId = array();
 
 
     public function actions()
@@ -366,7 +368,6 @@ class SiteController extends Controller
             $pageSize = $request->get('pageSize') ? $request->get('pageSize') : Yii::$app->params['PAGE_SIZE'];
          
             //公共搜索条件
-            
             $condition = array('add_uid' => $userId, 'type'  => $type , 'status' => array('not in', 'status', array(-1,4)));
             
             if($staffAdmin){
@@ -517,6 +518,105 @@ class SiteController extends Controller
             }
 
         }
+        
+        //图片还需要调整
+        public function actionPlayrecord(){
+            
+                $request = Yii::$app->getRequest();
+                $page  =$request->get('page') ? $request->get('page') : 1;
+                $pageSize = $request->get('pageSize') ? $request->get('pageSize') : Yii::$app->params['system']['PAGE_SIZE'];
+                $study_uid = $request->get('userId') ? $request->get('userId') : 91;
+                $condition = ['and', 'study_uid='.$study_uid, ['and', 'goods_id!=0', 'pid!=0']];
+
+                $retDataCount=StudyLogNew::find()->where($condition)->count();
+
+                if($retDataCount>0){
+                    $where = 'study_uid='.$study_uid.' and goods_id!=0 and pid!=0 and task_id=0';
+                    $feilds = 'goods_id,goods_type,max(id) as id';
+                    $order = 'order by id desc';
+                    $videoRecordList= StudyLogNew::getPageList($page,$pageSize,$where,$feilds,$order);
+                }
+                $IdGroup = array_reduce($videoRecordList, create_function('$v,$w', '$v[$w["goods_type"]][$w["goods_id"]]=$w["id"];return $v;'));
+                $goodIdGroup = array_reduce($videoRecordList, create_function('$v,$w', '$v[$w["goods_type"]][]=$w["goods_id"];return $v;'));
+                $this->sortId = array_map(function($element){return $element['goods_id'];},$videoRecordList);
+                
+                $videoList= [];
+                if(!empty($goodIdGroup[0])){
+                    $videoIds = implode(",",$goodIdGroup[0]);
+                    $videoList = Video::getVideoByIds($videoIds);
+                    
+                    foreach($videoList as $key=>$val){
+                        $videoLists[$key]['id'] = $IdGroup[0][$val['id']];
+                        $videoLists[$key]['type'] = 'video';
+                        $videoLists[$key]['video_id'] = $val['id'];
+                        $videoLists[$key]['goods_type'] = 0;
+                        $videoLists[$key]['goods_id'] = $val['id'];
+                        $videoLists[$key]['title'] = $val['title'];
+                                
+                        if($val['videocover'] == 1){
+                                 $videoLists[$key]['coverUrl'] = Common::get_photo_url($val['id'], "video");  //修改
+                        }else{
+                                 $videoLists[$key]['coverUrl']  =  Common::get_video_photo_url($val['upload_uid'], $val['video_id']);
+                        }
+                    }
+                }
+                 
+                $courseList= [];
+                if(!empty($goodIdGroup[1])){
+                        $courseIds = implode(",",$goodIdGroup[1]);
+                        $courseList = Course::getCourseByIds($courseIds);
+                        foreach($courseList as $key=>$val){
+                                $courseLists[$key]['id'] = $IdGroup[1][$val['courseId']];
+                                $courseLists[$key]['type'] = 'course';
+                                $courseLists[$key]['video_id'] = $val['courseId'];
+                                $courseLists[$key]['goods_type'] = 1;
+                                $courseLists[$key]['goods_id'] = $val['courseId'];
+                                $courseLists[$key]['title'] = $val['name'];
+
+                                if (!empty($courseLists['server_id'])) {
+                                    $courseLists[$key]['coverUrl'] =  Common::get_photo_url($val['courseId'], 'course', 1);
+                                } else {
+                                    $courseLists[$key]['coverUrl']  = "/app/templates/image/no_pic.jpg"; //默认图片路径
+                                }
+                        }
+                 }
+                
+                $sopList= [];
+                if(!empty($goodIdGroup[2])){
+                        $sopIds = implode(",",$goodIdGroup[2]);
+                        $sopList = SopTemplate::getSopByIds($sopIds);
+                        foreach($sopList as $key=>$val){
+                                $sopLists[$key]['id'] = $IdGroup[2][$val['id']];
+                                $sopLists[$key]['type'] = 'sop';
+                                $sopLists[$key]['video_id'] = $val['id'];
+                                $sopLists[$key]['title'] = $val['name'];
+                                $sopLists[$key]['goods_type'] = 2;
+                                $sopLists[$key]['goods_id'] = $val['id'];
+
+                                if (!empty($val['server_id'])) {
+                                    $sopLists[$key]['coverUrl'] =  Common::get_photo_url($val['id'], 'sopcover', $val['server_id']);
+                                } else {
+                                    $sopLists[$key]['coverUrl']  = "/app/templates/image/no_pic.jpg"; //默认图片路径
+                                }
+                        }
+                 }
+
+                $resArr = array_merge($videoLists,$courseLists,$sopLists);
+                $resArr = array_filter($resArr);
+                
+                usort($resArr,array($this,'compare'));
+                $allDatas['data'] = $resArr;
+                
+                $retval['total'] = $retDataCount;
+                $retval['list'] = $allDatas['data'];
+                Common::outputJson($retval);
+          }
+          
+         public function compare($a, $b){
+                return (array_search($a['video_id'], $this->sortId) < array_search($b['video_id'], $this->sortId)) ? -1 : 1;
+          }  
+        
+        
         
 
 

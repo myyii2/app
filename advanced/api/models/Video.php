@@ -102,4 +102,13 @@ class Video extends \yii\db\ActiveRecord
     public function getMp4URL($server_id,$videoId,$upload_uid){
         return !empty(self::$url) ? \common\library\Common::get_video_url($upload_uid, $videoId,$server_id,\common\library\Common::RES_VIDEO_MP4) : "";
     }
+    
+    public function getVideoByIds($ids){
+           
+        $connection = \Yii::$app->db1;
+        $sql = "select vul.id,vul.video_id,vul.title,vul.videocover,v.upload_uid from video_user_link as vul LEFT JOIN video as v on vul.video_id = v.videoId where id in (".$ids.")";
+        $command = $connection->createCommand($sql);
+        $videoList = $command->queryAll();
+        return $videoList;    
+    }
 }
