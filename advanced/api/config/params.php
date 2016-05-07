@@ -15,6 +15,13 @@ return [
         'deptTreeKey' => 'dept_tree_',      //组织架构树信息缓存
         'staffInfoKey' => 'staff_info_',    //员工信息缓存
     ],
+    'Task' => [
+        'TASK_STATUS_DOING' => 1,   //考核中任务状态码
+        'TASK_STATUS_DONE' => 2,   //已过期
+        'TASK_TYPE_TRAIN' => 1,   //内训
+        'TASK_TYPE_INTERVIEW' => 0,   //面试
+        'TASK_TYPE_MEMBER' => 3,   //会员
+    ],
     'system' => [
         'PAGE_SIZE' => 10,
     ],
@@ -26,7 +33,6 @@ return [
     'CODE_SUCCEED' => 1,
     'CODE_ERROR' => 2,
     'CODE_LACK' => 3,
-    
     
     
 ];
